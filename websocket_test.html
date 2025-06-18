@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RealSense WebSocket 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        .image-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .image-box {
+            flex: 1;
+            text-align: center;
+        }
+        .image-box img {
+            max-width: 100%;
+            max-height: 300px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+        .imu-data {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RealSense D435i WebSocket 테스트</h1>
+        
+        <div id="status" class="status disconnected">연결되지 않음</div>
+        
+        <div class="controls">
+            <button id="connectBtn" onclick="connect()">연결</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>연결 해제</button>
+            <button id="pingBtn" onclick="ping()" disabled>핑</button>
+            <button id="statusBtn" onclick="getStatus()" disabled>상태 확인</button>
+            <button id="startStreamBtn" onclick="startStreaming()" disabled>스트리밍 시작</button>
+            <button id="stopStreamBtn" onclick="stopStreaming()" disabled>스트리밍 중지</button>
+            <button onclick="clearLog()">로그 지우기</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div id="frameCount" class="stat-value">0</div>
+                <div class="stat-label">프레임 수</div>
+            </div>
+            <div class="stat-card">
+                <div id="fps" class="stat-value">0</div>
+                <div class="stat-label">FPS</div>
+            </div>
+            <div class="stat-card">
+                <div id="lastTimestamp" class="stat-value">-</div>
+                <div class="stat-label">마지막 타임스탬프</div>
+            </div>
+            <div class="stat-card">
+                <div id="dataSize" class="stat-value">0</div>
+                <div class="stat-label">데이터 크기 (KB)</div>
+            </div>
+        </div>
+        
+        <div class="image-container">
+            <div class="image-box">
+                <h3>컬러 이미지</h3>
+                <img id="colorImage" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="컬러 이미지">
+            </div>
+            <div class="image-box">
+                <h3>뎁스 이미지</h3>
+                <img id="depthImage" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="뎁스 이미지">
+            </div>
+        </div>
+        
+        <div id="imuData" class="imu-data" style="display: none;">
+            <h3>IMU 데이터</h3>
+            <div id="imuContent"></div>
+        </div>
+        
+        <h3>로그</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let frameCount = 0;
+        let startTime = null;
+        let lastFrameTime = 0;
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const pingBtn = document.getElementById('pingBtn');
+            const statusBtn = document.getElementById('statusBtn');
+            const startStreamBtn = document.getElementById('startStreamBtn');
+            const stopStreamBtn = document.getElementById('stopStreamBtn');
+            
+            if (connected) {
+                statusDiv.textContent = '연결됨';
+                statusDiv.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                pingBtn.disabled = false;
+                statusBtn.disabled = false;
+                startStreamBtn.disabled = false;
+                stopStreamBtn.disabled = false;
+            } else {
+                statusDiv.textContent = '연결되지 않음';
+                statusDiv.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                pingBtn.disabled = true;
+                statusBtn.disabled = true;
+                startStreamBtn.disabled = true;
+                stopStreamBtn.disabled = true;
+            }
+        }
+        
+        function connect() {
+            const serverUrl = prompt('서버 URL을 입력하세요:', 'ws://localhost:8080');
+            if (!serverUrl) return;
+            
+            try {
+                ws = new WebSocket(serverUrl);
+                
+                ws.onopen = function() {
+                    log('WebSocket 연결됨');
+                    updateStatus(true);
+                    startTime = Date.now();
+                };
+                
+                ws.onmessage = function(event) {
+                    handleMessage(event.data);
+                };
+                
+                ws.onclose = function() {
+                    log('WebSocket 연결 종료');
+                    updateStatus(false);
+                    ws = null;
+                };
+                
+                ws.onerror = function(error) {
+                    log('WebSocket 오류: ' + error);
+                    updateStatus(false);
+                };
+                
+            } catch (error) {
+                log('연결 실패: ' + error);
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+        
+        function sendCommand(command, data = {}) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('연결되지 않음');
+                return;
+            }
+            
+            const message = {
+                command: command,
+                ...data
+            };
+            
+            ws.send(JSON.stringify(message));
+            log(`명령 전송: ${command}`);
+        }
+        
+        function ping() {
+            sendCommand('ping');
+        }
+        
+        function getStatus() {
+            sendCommand('get_status');
+        }
+        
+        function startStreaming() {
+            sendCommand('start_streaming');
+        }
+        
+        function stopStreaming() {
+            sendCommand('stop_streaming');
+        }
+        
+        function handleMessage(data) {
+            try {
+                const message = JSON.parse(data);
+                const type = message.type;
+                
+                log(`메시지 수신: ${type}`);
+                
+                switch (type) {
+                    case 'pong':
+                        log(`핑 응답: ${message.server_time}`);
+                        break;
+                        
+                    case 'status':
+                        log(`서버 상태: 클라이언트 ${message.clients_connected}개, RealSense ${message.realsense_connected ? '연결됨' : '연결안됨'}`);
+                        break;
+                        
+                    case 'success':
+                        log(`성공: ${message.message}`);
+                        break;
+                        
+                    case 'error':
+                        log(`오류: ${message.message}`);
+                        break;
+                        
+                    case 'frame_data':
+                        handleFrameData(message);
+                        break;
+                        
+                    default:
+                        log(`알 수 없는 메시지 타입: ${type}`);
+                }
+                
+            } catch (error) {
+                log('메시지 파싱 오류: ' + error);
+            }
+        }
+        
+        function handleFrameData(data) {
+            frameCount++;
+            const currentTime = Date.now();
+            
+            // 통계 업데이트
+            document.getElementById('frameCount').textContent = frameCount;
+            document.getElementById('lastTimestamp').textContent = data.timestamp ? new Date(data.timestamp * 1000).toLocaleTimeString() : '-';
+            
+            // FPS 계산
+            if (startTime) {
+                const elapsed = (currentTime - startTime) / 1000;
+                const fps = frameCount / elapsed;
+                document.getElementById('fps').textContent = fps.toFixed(1);
+            }
+            
+            // 데이터 크기 계산
+            const dataSize = new Blob([JSON.stringify(data)]).size / 1024;
+            document.getElementById('dataSize').textContent = dataSize.toFixed(1);
+            
+            // 컬러 이미지 처리
+            if (data.color_image && data.color_image.data) {
+                const colorImg = document.getElementById('colorImage');
+                colorImg.src = 'data:image/jpeg;base64,' + data.color_image.data;
+            }
+            
+            // 뎁스 이미지 처리
+            if (data.depth_image && data.depth_image.data) {
+                const depthImg = document.getElementById('depthImage');
+                depthImg.src = 'data:image/png;base64,' + data.depth_image.data;
+            }
+            
+            // IMU 데이터 처리
+            if (data.imu) {
+                const imuDiv = document.getElementById('imuData');
+                const imuContent = document.getElementById('imuContent');
+                
+                imuDiv.style.display = 'block';
+                imuContent.innerHTML = `
+                    <p><strong>자이로스코프:</strong> X: ${data.imu.gyroscope.x.toFixed(3)}, Y: ${data.imu.gyroscope.y.toFixed(3)}, Z: ${data.imu.gyroscope.z.toFixed(3)}</p>
+                    <p><strong>가속도계:</strong> X: ${data.imu.accelerometer.x.toFixed(3)}, Y: ${data.imu.accelerometer.y.toFixed(3)}, Z: ${data.imu.accelerometer.z.toFixed(3)}</p>
+                    <p><strong>온도:</strong> ${data.imu.temperature.toFixed(1)}°C</p>
+                `;
+            }
+            
+            // 로그 출력 (10프레임마다)
+            if (frameCount % 10 === 0) {
+                log(`프레임 ${frameCount} 처리 완료`);
+            }
+        }
+        
+        // 페이지 로드 시 초기화
+        window.onload = function() {
+            log('RealSense WebSocket 테스트 페이지 로드됨');
+        };
+    </script>
+</body>
+</html> 

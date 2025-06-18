@@ -4,4 +4,5 @@ numpy==1.24.3
 opencv-python==4.8.1.78
 websockets==11.0.3
 aiofiles==23.2.1
-python-dotenv==1.0.0 
+python-dotenv==1.0.0
+psutil==5.9.5 

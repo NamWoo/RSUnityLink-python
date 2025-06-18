@@ -75,11 +75,16 @@ class DataTransmitter:
             
             self.logger.info("WebSocket 서버 시작 완료")
             
-            # 서버 실행 유지
-            await self.server.wait_closed()
+            # 서버 실행 유지 (종료 시그널 대기)
+            try:
+                await self.server.wait_closed()
+            except asyncio.CancelledError:
+                self.logger.info("서버 종료 신호 수신")
+                await self.stop_server()
             
         except Exception as e:
             self.logger.error(f"WebSocket 서버 시작 실패: {str(e)}")
+            await self.stop_server()
     
     async def stop_server(self):
         """WebSocket 서버 중지"""

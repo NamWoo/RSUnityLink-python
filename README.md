@@ -40,6 +40,39 @@ cp env_example.txt .env
 nano .env
 ```
 
+## 서버 실행 및 종료
+
+### 방법 1: 직접 실행 (권장)
+```bash
+# 서버 실행
+python3 run_server.py
+
+# 종료: Ctrl+C
+```
+
+### 방법 2: 기본 실행
+```bash
+# 서버 실행
+python3 main.py
+
+# 종료: Ctrl+C (개선된 종료 처리)
+```
+
+### 방법 3: 별도 종료 스크립트
+```bash
+# 서버 실행
+python3 main.py &
+
+# 별도 터미널에서 종료
+python3 stop_server.py
+```
+
+### 방법 4: 자동 설치 스크립트
+```bash
+# 라즈베리파이에서 자동 설치 및 실행
+./install.sh
+```
+
 ## 설정 옵션
 
 ### RealSense 설정
@@ -67,16 +100,27 @@ nano .env
 - `LOG_MAX_SIZE`: 로그 파일 최대 크기 (기본값: 10MB)
 - `LOG_BACKUP_COUNT`: 로그 백업 파일 수 (기본값: 5)
 
-## 사용 방법
+## 테스트 방법
 
-### 1. 서버 실행
+### 1. 테스트 클라이언트 사용
 ```bash
-python main.py
+# 서버 실행 (터미널 1)
+python3 run_server.py
+
+# 테스트 클라이언트 실행 (터미널 2)
+python3 test_client.py
 ```
 
-### 2. 테스트 클라이언트 실행
+### 2. 웹 브라우저 테스트
+1. `websocket_test.html` 파일을 웹 브라우저에서 열기
+2. "연결" 버튼 클릭
+3. 서버 URL 입력: `ws://localhost:8080`
+4. 실시간 데이터 확인
+
+### 3. 외부 접속 테스트
 ```bash
-python test_client.py
+# 연결 테스트
+./test_websocket.sh 라즈베리파이IP 8080
 ```
 
 ## 프로젝트 구조
@@ -84,13 +128,18 @@ python test_client.py
 ```
 RSUnityLink-python/
 ├── main.py                 # 메인 애플리케이션 진입점
+├── run_server.py           # 안정적인 서버 실행 래퍼
+├── stop_server.py          # 서버 종료 스크립트
 ├── config.py              # 설정 관리 싱글톤 클래스
 ├── logger.py              # 로깅 관리 싱글톤 클래스
 ├── realsense_manager.py   # RealSense D435i 관리 클래스
 ├── data_transmitter.py    # WebSocket 서버 및 데이터 전송
 ├── test_client.py         # 테스트용 WebSocket 클라이언트
+├── websocket_test.html    # 웹 브라우저 테스트 페이지
+├── test_websocket.sh      # WebSocket 연결 테스트 스크립트
 ├── requirements.txt       # Python 의존성 패키지
 ├── env_example.txt        # 환경 변수 설정 예제
+├── install.sh             # 자동 설치 스크립트
 └── README.md             # 프로젝트 문서
 ```
 
@@ -197,6 +246,11 @@ public class RealSenseClient : MonoBehaviour
 ```
 
 ## 문제 해결
+
+### 서버가 종료되지 않는 경우
+1. **Ctrl+C 두 번 누르기**: 첫 번째는 정상 종료, 두 번째는 강제 종료
+2. **종료 스크립트 사용**: `python3 stop_server.py`
+3. **프로세스 강제 종료**: `pkill -f main.py`
 
 ### RealSense 장치를 찾을 수 없는 경우
 1. RealSense D435i가 올바르게 연결되었는지 확인
