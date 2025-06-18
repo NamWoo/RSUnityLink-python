@@ -61,9 +61,35 @@ class DataTransmitter:
         try:
             self.logger.info(f"WebSocket 서버 시작: {self.socket_config['host']}:{self.socket_config['port']}")
             
-            # WebSocket 서버 시작
+            # WebSocket 서버 시작 (함수 정의 방식)
+            async def websocket_handler(websocket, path):
+                client_address = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
+                self.logger.info(f"클라이언트 연결: {client_address}")
+                
+                # 최대 연결 수 확인
+                if len(self.clients) >= self.socket_config['max_connections']:
+                    self.logger.warning(f"최대 연결 수 초과: {client_address}")
+                    await websocket.close(1008, "최대 연결 수 초과")
+                    return
+                
+                # 클라이언트 추가
+                self.clients.add(websocket)
+                
+                try:
+                    # 클라이언트와 통신
+                    async for message in websocket:
+                        await self._process_client_message(websocket, message)
+                        
+                except websockets.exceptions.ConnectionClosed:
+                    self.logger.info(f"클라이언트 연결 종료: {client_address}")
+                except Exception as e:
+                    self.logger.error(f"클라이언트 처리 중 오류: {str(e)}")
+                finally:
+                    # 클라이언트 제거
+                    self.clients.discard(websocket)
+            
             self.server = await websockets.serve(
-                self._handle_client_wrapper,
+                websocket_handler,
                 self.socket_config['host'],
                 self.socket_config['port']
             )
@@ -108,37 +134,6 @@ class DataTransmitter:
         for client in self.clients.copy():
             await client.close()
         self.clients.clear()
-    
-    async def _handle_client_wrapper(self, websocket, path):
-        """클라이언트 핸들러 래퍼"""
-        await self._handle_client(websocket, path)
-    
-    async def _handle_client(self, websocket: WebSocketServerProtocol, path: str = ""):
-        """클라이언트 연결 처리"""
-        client_address = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        self.logger.info(f"클라이언트 연결: {client_address}")
-        
-        # 최대 연결 수 확인
-        if len(self.clients) >= self.socket_config['max_connections']:
-            self.logger.warning(f"최대 연결 수 초과: {client_address}")
-            await websocket.close(1008, "최대 연결 수 초과")
-            return
-        
-        # 클라이언트 추가
-        self.clients.add(websocket)
-        
-        try:
-            # 클라이언트와 통신
-            async for message in websocket:
-                await self._process_client_message(websocket, message)
-                
-        except websockets.exceptions.ConnectionClosed:
-            self.logger.info(f"클라이언트 연결 종료: {client_address}")
-        except Exception as e:
-            self.logger.error(f"클라이언트 처리 중 오류: {str(e)}")
-        finally:
-            # 클라이언트 제거
-            self.clients.discard(websocket)
     
     async def _process_client_message(self, websocket: WebSocketServerProtocol, message: str):
         """클라이언트 메시지 처리"""
