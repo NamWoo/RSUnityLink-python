@@ -82,53 +82,83 @@ class RealSenseManager:
             
             self.logger.info(f"발견된 RealSense 장치: {len(devices)}개")
             
+            # 장치 정보 출력
+            device = devices[0]
+            self.logger.info(f"장치 이름: {device.get_info(rs.camera_info.name)}")
+            self.logger.info(f"시리얼 번호: {device.get_info(rs.camera_info.serial_number)}")
+            self.logger.info(f"펌웨어 버전: {device.get_info(rs.camera_info.firmware_version)}")
+            
             # 파이프라인 생성
             self.pipeline = rs.pipeline()
             self.config_rs = rs.config()
             
-            # 스트림 설정
-            self.config_rs.enable_stream(
-                rs.stream.color,
-                self.rs_config['width'],
-                self.rs_config['height'],
-                rs.format.bgr8,
-                self.rs_config['fps']
-            )
+            # 장치 선택 (시리얼 번호로)
+            serial_number = device.get_info(rs.camera_info.serial_number)
+            self.config_rs.enable_device(serial_number)
             
-            self.config_rs.enable_stream(
-                rs.stream.depth,
-                self.rs_config['width'],
-                self.rs_config['height'],
-                rs.format.z16,
-                self.rs_config['fps']
-            )
-            
-            # IMU 스트림 활성화
-            if self.rs_config['enable_imu']:
+            # 스트림 설정 (더 안정적인 방법)
+            try:
+                # 컬러 스트림
                 self.config_rs.enable_stream(
-                    rs.stream.accel,
-                    rs.format.motion_xyz32f,
+                    rs.stream.color,
+                    self.rs_config['width'],
+                    self.rs_config['height'],
+                    rs.format.bgr8,
                     self.rs_config['fps']
                 )
+                self.logger.info("컬러 스트림 설정 완료")
+                
+                # 뎁스 스트림
                 self.config_rs.enable_stream(
-                    rs.stream.gyro,
-                    rs.format.motion_xyz32f,
+                    rs.stream.depth,
+                    self.rs_config['width'],
+                    self.rs_config['height'],
+                    rs.format.z16,
                     self.rs_config['fps']
                 )
+                self.logger.info("뎁스 스트림 설정 완료")
+                
+                # IMU 스트림 활성화
+                if self.rs_config['enable_imu']:
+                    self.config_rs.enable_stream(
+                        rs.stream.accel,
+                        rs.format.motion_xyz32f,
+                        self.rs_config['fps']
+                    )
+                    self.config_rs.enable_stream(
+                        rs.stream.gyro,
+                        rs.format.motion_xyz32f,
+                        self.rs_config['fps']
+                    )
+                    self.logger.info("IMU 스트림 설정 완료")
+                
+            except Exception as e:
+                self.logger.error(f"스트림 설정 실패: {str(e)}")
+                return False
             
-            # 파이프라인 시작
-            profile = self.pipeline.start(self.config_rs)
+            # 파이프라인 시작 (타임아웃 설정)
+            try:
+                profile = self.pipeline.start(self.config_rs)
+                self.logger.info("파이프라인 시작 성공")
+            except Exception as e:
+                self.logger.error(f"파이프라인 시작 실패: {str(e)}")
+                return False
             
             # 스트림 프로파일 가져오기
-            color_profile = profile.get_stream(rs.stream.color)
-            depth_profile = profile.get_stream(rs.stream.depth)
-            
-            # 내부 파라미터 가져오기
-            color_intrinsics = color_profile.as_video_stream_profile().get_intrinsics()
-            depth_intrinsics = depth_profile.as_video_stream_profile().get_intrinsics()
-            
-            self.logger.info(f"컬러 스트림 해상도: {color_intrinsics.width}x{color_intrinsics.height}")
-            self.logger.info(f"뎁스 스트림 해상도: {depth_intrinsics.width}x{depth_intrinsics.height}")
+            try:
+                color_profile = profile.get_stream(rs.stream.color)
+                depth_profile = profile.get_stream(rs.stream.depth)
+                
+                # 내부 파라미터 가져오기
+                color_intrinsics = color_profile.as_video_stream_profile().get_intrinsics()
+                depth_intrinsics = depth_profile.as_video_stream_profile().get_intrinsics()
+                
+                self.logger.info(f"컬러 스트림 해상도: {color_intrinsics.width}x{color_intrinsics.height}")
+                self.logger.info(f"뎁스 스트림 해상도: {depth_intrinsics.width}x{depth_intrinsics.height}")
+                
+            except Exception as e:
+                self.logger.warning(f"스트림 프로파일 정보 가져오기 실패: {str(e)}")
+                # 프로파일 정보가 없어도 계속 진행
             
             self.is_connected = True
             self.logger.info("RealSense D435i 초기화 완료")
