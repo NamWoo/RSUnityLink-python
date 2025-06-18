@@ -9,6 +9,7 @@ import base64
 import cv2
 import numpy as np
 from datetime import datetime
+from typing import Optional
 import websockets
 from websockets.client import WebSocketClientProtocol
 
