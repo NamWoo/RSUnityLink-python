@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RealSense WebSocket 테스트</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .log { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        input { padding: 5px; width: 300px; }
+    </style>
+</head>
+<body>
+    <h1>RealSense WebSocket 테스트</h1>
+    
+    <div id="status" class="status disconnected">연결되지 않음</div>
+    
+    <div>
+        <input type="text" id="serverUrl" value="ws://192.168.45.236:8080" placeholder="WebSocket 서버 URL">
+        <button onclick="connect()">연결</button>
+        <button onclick="disconnect()">연결 해제</button>
+        <button onclick="ping()">핑</button>
+        <button onclick="startStream()">스트리밍 시작</button>
+        <button onclick="stopStream()">스트리밍 중지</button>
+    </div>
+    
+    <div>
+        <h3>로그</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let frameCount = 0;
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            if (connected) {
+                statusDiv.textContent = '연결됨';
+                statusDiv.className = 'status connected';
+            } else {
+                statusDiv.textContent = '연결되지 않음';
+                statusDiv.className = 'status disconnected';
+            }
+        }
+        
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            if (!url) {
+                log('서버 URL을 입력하세요');
+                return;
+            }
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = function() {
+                    log('WebSocket 연결됨');
+                    updateStatus(true);
+                };
+                
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`메시지 수신: ${data.type}`);
+                        
+                        if (data.type === 'frame_data') {
+                            frameCount++;
+                            if (frameCount % 10 === 0) {
+                                log(`프레임 ${frameCount} 수신됨`);
+                            }
+                        }
+                    } catch (e) {
+                        log(`메시지 파싱 오류: ${e.message}`);
+                    }
+                };
+                
+                ws.onclose = function() {
+                    log('WebSocket 연결 종료');
+                    updateStatus(false);
+                    ws = null;
+                };
+                
+                ws.onerror = function(error) {
+                    log('WebSocket 오류: ' + error);
+                    updateStatus(false);
+                };
+                
+            } catch (error) {
+                log('연결 실패: ' + error);
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+        
+        function sendCommand(command) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('연결되지 않음');
+                return;
+            }
+            
+            const message = { command: command };
+            ws.send(JSON.stringify(message));
+            log(`명령 전송: ${command}`);
+        }
+        
+        function ping() {
+            sendCommand('ping');
+        }
+        
+        function startStream() {
+            sendCommand('start_streaming');
+        }
+        
+        function stopStream() {
+            sendCommand('stop_streaming');
+        }
+        
+        // 페이지 로드 시 초기화
+        window.onload = function() {
+            log('RealSense WebSocket 테스트 페이지 로드됨');
+            log('연결 버튼을 클릭하여 서버에 연결하세요');
+        };
+    </script>
+</body>
+</html> 
