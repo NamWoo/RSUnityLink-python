@@ -61,12 +61,9 @@ class DataTransmitter:
         try:
             self.logger.info(f"WebSocket 서버 시작: {self.socket_config['host']}:{self.socket_config['port']}")
             
-            # WebSocket 서버 시작 (핸들러 함수를 래핑)
-            async def handler(websocket, path):
-                await self._handle_client(websocket, path)
-            
+            # WebSocket 서버 시작
             self.server = await websockets.serve(
-                handler,
+                self._handle_client_wrapper,
                 self.socket_config['host'],
                 self.socket_config['port']
             )
@@ -112,7 +109,11 @@ class DataTransmitter:
             await client.close()
         self.clients.clear()
     
-    async def _handle_client(self, websocket: WebSocketServerProtocol, path: str = None):
+    async def _handle_client_wrapper(self, websocket, path):
+        """클라이언트 핸들러 래퍼"""
+        await self._handle_client(websocket, path)
+    
+    async def _handle_client(self, websocket: WebSocketServerProtocol, path: str = ""):
         """클라이언트 연결 처리"""
         client_address = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
         self.logger.info(f"클라이언트 연결: {client_address}")
