@@ -215,8 +215,12 @@ class RealSenseManager:
         # 파이프라인 중지
         if self.pipeline:
             try:
-                self.pipeline.stop()
-                self.logger.info("RealSense 파이프라인 중지 완료")
+                # 파이프라인이 실행 중인지 확인
+                if hasattr(self.pipeline, '_running') and self.pipeline._running:
+                    self.pipeline.stop()
+                    self.logger.info("RealSense 파이프라인 중지 완료")
+                else:
+                    self.logger.info("파이프라인이 이미 중지되어 있음")
             except Exception as e:
                 self.logger.error(f"파이프라인 중지 중 오류: {str(e)}")
         

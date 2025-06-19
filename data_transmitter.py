@@ -15,6 +15,7 @@ from websockets.server import WebSocketServerProtocol
 from logger import Logger
 from config import Config
 from realsense_manager import RealSenseManager, FrameData
+import time
 
 class DataTransmitter:
     """Unity로 데이터를 전송하는 비동기 소켓 서버 싱글톤 클래스"""
@@ -183,6 +184,16 @@ class DataTransmitter:
                 # 스트리밍 중지
                 self.logger.info("클라이언트로부터 스트리밍 중지 요청 수신")
                 await self.rs_manager.stop_streaming()
+                
+                # 데이터 전송 태스크도 중지
+                if self._transmission_task and not self._transmission_task.done():
+                    self._transmission_task.cancel()
+                    try:
+                        await self._transmission_task
+                    except asyncio.CancelledError:
+                        pass
+                    self.logger.info("데이터 전송 태스크 중지 완료")
+                
                 await websocket.send(json.dumps({
                     'type': 'success',
                     'message': '스트리밍 중지됨'
@@ -209,48 +220,43 @@ class DataTransmitter:
             }))
     
     async def _transmit_data(self):
-        """데이터 전송 태스크"""
+        """데이터 전송 비동기 태스크"""
         frame_count = 0
+        last_transmission_time = time.time()
         
         try:
             while self.is_running:
-                if not self.clients:
+                # RealSense 스트리밍이 중지된 경우 대기
+                if not self.rs_manager.is_running:
                     await asyncio.sleep(0.1)
                     continue
                 
-                # RealSense 데이터 가져오기
+                # 프레임 데이터 가져오기
                 frame_data = self.rs_manager.get_latest_frame_data()
-                if not frame_data:
+                if frame_data is None:
                     await asyncio.sleep(0.01)
                     continue
                 
-                # 프레임 스킵 확인
+                # 프레임 스킵 처리
                 frame_count += 1
                 if frame_count % self.transmission_config['frame_skip'] != 0:
-                    await asyncio.sleep(0.01)
                     continue
                 
                 # 전송 데이터 준비
                 transmission_data = await self._prepare_transmission_data(frame_data)
                 
-                # 모든 클라이언트에게 전송
-                disconnected_clients = set()
+                # 클라이언트들에게 브로드캐스트
+                if self.clients:
+                    await self.broadcast_message(transmission_data)
+                    
+                    # 전송 통계 (1초마다)
+                    current_time = time.time()
+                    if current_time - last_transmission_time >= 1.0:
+                        self.logger.info(f"데이터 전송 중: {len(self.clients)}개 클라이언트, 프레임 {frame_count}")
+                        last_transmission_time = current_time
                 
-                for client in self.clients:
-                    try:
-                        await client.send(json.dumps(transmission_data))
-                    except websockets.exceptions.ConnectionClosed:
-                        disconnected_clients.add(client)
-                    except Exception as e:
-                        self.logger.error(f"클라이언트 전송 중 오류: {str(e)}")
-                        disconnected_clients.add(client)
-                
-                # 연결이 끊어진 클라이언트 제거
-                for client in disconnected_clients:
-                    self.clients.discard(client)
-                
-                # 전송 간격 조절
-                await asyncio.sleep(1.0 / 30)  # 30 FPS
+                # 프레임 레이트 제어
+                await asyncio.sleep(1.0 / 30)  # 30 FPS로 고정
                 
         except asyncio.CancelledError:
             self.logger.info("데이터 전송 태스크 취소됨")
