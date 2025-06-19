@@ -20,6 +20,12 @@ public class WebSocketTest : MonoBehaviour
 
     void Start()
     {
+        // Ensure UnityMainThreadDispatcher exists
+        if (UnityMainThreadDispatcher.Instance() == null)
+        {
+            Debug.LogWarning("UnityMainThreadDispatcher not found, creating one...");
+        }
+
         Debug.Log($"Attempting to connect to server at: {serverUrl}");
         
         try
