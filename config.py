@@ -27,11 +27,11 @@ class Config:
         
         # RealSense 설정
         self.realsense_config = {
-            'width': int(os.getenv('RS_WIDTH', 640)),
-            'height': int(os.getenv('RS_HEIGHT', 480)),
-            'fps': int(os.getenv('RS_FPS', 30)),
+            'width': int(os.getenv('REALSENSE_WIDTH', '640')),
+            'height': int(os.getenv('REALSENSE_HEIGHT', '480')),
+            'fps': int(os.getenv('REALSENSE_FPS', '30')),
             'depth_scale': float(os.getenv('RS_DEPTH_SCALE', 0.001)),
-            'enable_imu': os.getenv('RS_ENABLE_IMU', 'true').lower() == 'true'
+            'enable_imu': os.getenv('REALSENSE_ENABLE_IMU', 'False').lower() == 'true'
         }
         
         # 소켓 서버 설정

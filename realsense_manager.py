@@ -98,38 +98,42 @@ class RealSenseManager:
             
             # 스트림 설정 (단순화된 방법)
             try:
+                # 기본 해상도로 시작 (더 안정적)
+                width = 640
+                height = 480
+                fps = 30
+                
                 # 컬러 스트림만 먼저 테스트
                 self.config_rs.enable_stream(
                     rs.stream.color,
-                    self.rs_config['width'],
-                    self.rs_config['height'],
+                    width, height,
                     rs.format.bgr8,
-                    self.rs_config['fps']
+                    fps
                 )
                 self.logger.info("컬러 스트림 설정 완료")
                 
                 # 뎁스 스트림 추가
                 self.config_rs.enable_stream(
                     rs.stream.depth,
-                    self.rs_config['width'],
-                    self.rs_config['height'],
+                    width, height,
                     rs.format.z16,
-                    self.rs_config['fps']
+                    fps
                 )
                 self.logger.info("뎁스 스트림 설정 완료")
                 
-                # IMU 스트림은 나중에 추가 (문제가 될 수 있음)
+                # IMU 스트림은 일단 비활성화 (문제가 될 수 있음)
                 if self.rs_config['enable_imu']:
                     try:
+                        # IMU 스트림은 기본 설정으로
                         self.config_rs.enable_stream(
                             rs.stream.accel,
                             rs.format.motion_xyz32f,
-                            self.rs_config['fps']
+                            250  # IMU는 보통 250Hz
                         )
                         self.config_rs.enable_stream(
                             rs.stream.gyro,
                             rs.format.motion_xyz32f,
-                            self.rs_config['fps']
+                            400  # 자이로는 보통 400Hz
                         )
                         self.logger.info("IMU 스트림 설정 완료")
                     except Exception as e:
