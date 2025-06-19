@@ -96,14 +96,14 @@ class RealSenseManager:
             serial_number = device.get_info(rs.camera_info.serial_number)
             self.config_rs.enable_device(serial_number)
             
-            # 스트림 설정 (컬러 스트림만 사용)
+            # 스트림 설정 (순차적으로 추가)
             try:
-                # 기본 해상도로 시작 (더 안정적)
+                # 기본 해상도로 시작
                 width = 640
                 height = 480
                 fps = 30
                 
-                # 컬러 스트림만 설정 (뎁스는 나중에 추가)
+                # 1단계: 컬러 스트림만 먼저 설정
                 self.config_rs.enable_stream(
                     rs.stream.color,
                     width, height,
@@ -112,16 +112,17 @@ class RealSenseManager:
                 )
                 self.logger.info("컬러 스트림 설정 완료")
                 
-                # 뎁스 스트림은 일단 비활성화 (문제가 될 수 있음)
-                # self.config_rs.enable_stream(
-                #     rs.stream.depth,
-                #     width, height,
-                #     rs.format.z16,
-                #     fps
-                # )
-                # self.logger.info("뎁스 스트림 설정 완료")
+                # 2단계: 뎁스 스트림 추가 (잠시 대기 후)
+                await asyncio.sleep(0.1)  # 잠시 대기
+                self.config_rs.enable_stream(
+                    rs.stream.depth,
+                    width, height,
+                    rs.format.z16,
+                    fps
+                )
+                self.logger.info("뎁스 스트림 설정 완료")
                 
-                # IMU 스트림도 비활성화
+                # IMU 스트림은 일단 비활성화
                 self.rs_config['enable_imu'] = False
                 
             except Exception as e:
@@ -214,12 +215,13 @@ class RealSenseManager:
                 if color_frame:
                     color_image = np.asanyarray(color_frame.get_data())
                 
-                # 뎁스 프레임 (일단 비활성화)
-                # depth_frame = frames.get_depth_frame()
-                # depth_image = None
-                # if depth_frame:
-                #     depth_image = np.asanyarray(depth_frame.get_data())
+                # 뎁스 프레임
+                depth_frame = frames.get_depth_frame()
                 depth_image = None
+                if depth_frame:
+                    depth_image = np.asanyarray(depth_frame.get_data())
+                    # 뎁스 이미지를 미터 단위로 변환
+                    depth_image = depth_image * self.rs_config['depth_scale']
                 
                 # 프레임 데이터 생성
                 self.latest_frame_data = FrameData(
