@@ -43,11 +43,11 @@ class Config:
         
         # 데이터 전송 설정
         self.transmission_config = {
-            'enable_depth': os.getenv('ENABLE_DEPTH', 'true').lower() == 'true',
-            'enable_color': os.getenv('ENABLE_COLOR', 'true').lower() == 'true',
-            'enable_imu': os.getenv('ENABLE_IMU', 'true').lower() == 'true',
-            'compression_quality': int(os.getenv('COMPRESSION_QUALITY', 80)),
-            'frame_skip': int(os.getenv('FRAME_SKIP', 1))
+            'enable_color': os.getenv('ENABLE_COLOR', 'True').lower() == 'true',
+            'enable_depth': os.getenv('ENABLE_DEPTH', 'False').lower() == 'true',
+            'enable_imu': os.getenv('ENABLE_IMU', 'False').lower() == 'true',
+            'compression_quality': int(os.getenv('COMPRESSION_QUALITY', '80')),
+            'frame_skip': int(os.getenv('FRAME_SKIP', '1'))
         }
         
         # 로깅 설정
