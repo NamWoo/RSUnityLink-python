@@ -192,3 +192,69 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Unity Project - unitySocketProject
+# Unity 프로젝트에서 Assets, Packages, ProjectSettings만 추적하고 나머지는 무시
+unitySocketProject/*
+!unitySocketProject/Assets/
+!unitySocketProject/Packages/
+!unitySocketProject/ProjectSettings/
+
+# Unity 특정 파일들 무시 (Assets, Packages, ProjectSettings 내부에서도)
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity3D generated meta files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Unity3D generated file on crash reports
+sysinfo.txt
+
+# Builds
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# Crashlytics generated file
+crashlytics-build.properties
+
+# Packed Addressables
+unitySocketProject/Assets/AddressableAssetsData/*/bin/
+unitySocketProject/Assets/AddressableAssetsData/*/obj/
+
+# Temporary auto-generated Android Assets
+unitySocketProject/Assets/Plugins/Android/mainTemplate.gradle
+unitySocketProject/Assets/Plugins/Android/launcherTemplate.gradle
+unitySocketProject/Assets/Plugins/Android/baseProjectTemplate.gradle
+
+# OS generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Unity Logs
+unitySocketProject/Logs/
+unitySocketProject/UserSettings/
+unitySocketProject/Library/
+unitySocketProject/Temp/
+unitySocketProject/obj/
+unitySocketProject/.vs/
