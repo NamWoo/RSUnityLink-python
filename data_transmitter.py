@@ -181,11 +181,13 @@ class DataTransmitter:
                 
             elif command == 'stop_streaming':
                 # 스트리밍 중지
+                self.logger.info("클라이언트로부터 스트리밍 중지 요청 수신")
                 await self.rs_manager.stop_streaming()
                 await websocket.send(json.dumps({
                     'type': 'success',
                     'message': '스트리밍 중지됨'
                 }))
+                self.logger.info("RealSense 스트리밍 중지 완료")
                 
             else:
                 # 알 수 없는 명령

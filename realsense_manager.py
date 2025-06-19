@@ -148,6 +148,12 @@ class RealSenseManager:
                 self.logger.info(f"컬러 스트림 해상도: {color_intrinsics.width}x{color_intrinsics.height}")
                 self.logger.info(f"뎁스 스트림 해상도: {depth_intrinsics.width}x{depth_intrinsics.height}")
                 
+                # 해상도가 다르면 경고
+                if color_intrinsics.width != depth_intrinsics.width or color_intrinsics.height != depth_intrinsics.height:
+                    self.logger.warning("컬러와 뎁스 해상도가 다릅니다!")
+                    self.logger.warning(f"컬러: {color_intrinsics.width}x{color_intrinsics.height}")
+                    self.logger.warning(f"뎁스: {depth_intrinsics.width}x{depth_intrinsics.height}")
+                
             except Exception as e:
                 self.logger.warning(f"스트림 프로파일 정보 가져오기 실패: {str(e)}")
                 # 프로파일 정보가 없어도 계속 진행
@@ -182,8 +188,12 @@ class RealSenseManager:
     
     async def stop_streaming(self):
         """스트리밍 중지"""
+        if not self.is_running:
+            self.logger.warning("이미 스트리밍이 중지되어 있습니다.")
+            return
+        
+        self.logger.info("RealSense 스트리밍 중지 시작")
         self.is_running = False
-        self.logger.info("RealSense 스트리밍 중지")
         
         # 태스크 취소
         if self._frame_task:
@@ -192,6 +202,7 @@ class RealSenseManager:
                 await self._frame_task
             except asyncio.CancelledError:
                 pass
+            self._frame_task = None
         
         if self._imu_task:
             self._imu_task.cancel()
@@ -199,6 +210,17 @@ class RealSenseManager:
                 await self._imu_task
             except asyncio.CancelledError:
                 pass
+            self._imu_task = None
+        
+        # 파이프라인 중지
+        if self.pipeline:
+            try:
+                self.pipeline.stop()
+                self.logger.info("RealSense 파이프라인 중지 완료")
+            except Exception as e:
+                self.logger.error(f"파이프라인 중지 중 오류: {str(e)}")
+        
+        self.logger.info("RealSense 스트리밍 중지 완료")
     
     async def _process_frames(self):
         """프레임 처리 비동기 태스크"""
