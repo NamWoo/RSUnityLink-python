@@ -96,9 +96,9 @@ class RealSenseManager:
             serial_number = device.get_info(rs.camera_info.serial_number)
             self.config_rs.enable_device(serial_number)
             
-            # 스트림 설정 (더 안정적인 방법)
+            # 스트림 설정 (단순화된 방법)
             try:
-                # 컬러 스트림
+                # 컬러 스트림만 먼저 테스트
                 self.config_rs.enable_stream(
                     rs.stream.color,
                     self.rs_config['width'],
@@ -108,7 +108,7 @@ class RealSenseManager:
                 )
                 self.logger.info("컬러 스트림 설정 완료")
                 
-                # 뎁스 스트림
+                # 뎁스 스트림 추가
                 self.config_rs.enable_stream(
                     rs.stream.depth,
                     self.rs_config['width'],
@@ -118,25 +118,29 @@ class RealSenseManager:
                 )
                 self.logger.info("뎁스 스트림 설정 완료")
                 
-                # IMU 스트림 활성화
+                # IMU 스트림은 나중에 추가 (문제가 될 수 있음)
                 if self.rs_config['enable_imu']:
-                    self.config_rs.enable_stream(
-                        rs.stream.accel,
-                        rs.format.motion_xyz32f,
-                        self.rs_config['fps']
-                    )
-                    self.config_rs.enable_stream(
-                        rs.stream.gyro,
-                        rs.format.motion_xyz32f,
-                        self.rs_config['fps']
-                    )
-                    self.logger.info("IMU 스트림 설정 완료")
+                    try:
+                        self.config_rs.enable_stream(
+                            rs.stream.accel,
+                            rs.format.motion_xyz32f,
+                            self.rs_config['fps']
+                        )
+                        self.config_rs.enable_stream(
+                            rs.stream.gyro,
+                            rs.format.motion_xyz32f,
+                            self.rs_config['fps']
+                        )
+                        self.logger.info("IMU 스트림 설정 완료")
+                    except Exception as e:
+                        self.logger.warning(f"IMU 스트림 설정 실패 (무시하고 계속): {str(e)}")
+                        self.rs_config['enable_imu'] = False
                 
             except Exception as e:
                 self.logger.error(f"스트림 설정 실패: {str(e)}")
                 return False
             
-            # 파이프라인 시작 (타임아웃 설정)
+            # 파이프라인 시작
             try:
                 profile = self.pipeline.start(self.config_rs)
                 self.logger.info("파이프라인 시작 성공")
@@ -144,12 +148,11 @@ class RealSenseManager:
                 self.logger.error(f"파이프라인 시작 실패: {str(e)}")
                 return False
             
-            # 스트림 프로파일 가져오기
+            # 스트림 프로파일 정보 가져오기 (선택사항)
             try:
                 color_profile = profile.get_stream(rs.stream.color)
                 depth_profile = profile.get_stream(rs.stream.depth)
                 
-                # 내부 파라미터 가져오기
                 color_intrinsics = color_profile.as_video_stream_profile().get_intrinsics()
                 depth_intrinsics = depth_profile.as_video_stream_profile().get_intrinsics()
                 
