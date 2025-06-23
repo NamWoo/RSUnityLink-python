@@ -101,7 +101,7 @@ class RealSenseManager:
                 # 기본 해상도로 시작
                 width = 640
                 height = 480
-                fps = 30
+                fps = 20
                 
                 # 1단계: 컬러 스트림만 먼저 설정
                 self.config_rs.enable_stream(
@@ -258,7 +258,7 @@ class RealSenseManager:
                 )
                 
                 # 프레임 처리 간격 조절
-                await asyncio.sleep(1.0 / self.rs_config['fps'])
+                await asyncio.sleep(1.0 / self.rs_config.get('fps', 20))
                 
         except asyncio.CancelledError:
             self.logger.info("프레임 처리 태스크 취소됨")

@@ -4,99 +4,168 @@ import base64
 import cv2
 import numpy as np
 import logging
-import math
+from aiohttp import web
+from realsense_manager import RealSenseManager, FrameData
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
+# --- Basic Setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# --- Socket.IO Server Setup ---
 sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
-from aiohttp import web
 app = web.Application()
 sio.attach(app)
 
+# --- Global Variables ---
+rs_manager = RealSenseManager()
+streaming_tasks = {}  # 각 클라이언트(sid)의 스트리밍 작업을 저장
+
+# --- Helper Functions ---
+def prepare_frame_data_for_client(frame_data: FrameData):
+    """Socket.IO로 전송할 프레임 데이터를 인코딩합니다."""
+    if not frame_data:
+        logger.warning("prepare_frame_data_for_client: No frame data received.")
+        return None
+
+    color_base64 = None
+    if frame_data.color_frame is not None:
+        ret, buffer = cv2.imencode('.jpg', frame_data.color_frame)
+        if ret:
+            color_base64 = base64.b64encode(buffer).decode('utf-8')
+        else:
+            logger.warning("Failed to encode color frame.")
+
+    depth_base64 = None
+    if frame_data.depth_frame is not None:
+        # Depth data is usually 16-bit, scale it for visualization
+        depth_visual = cv2.normalize(frame_data.depth_frame, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        depth_visual_color = cv2.applyColorMap(depth_visual, cv2.COLORMAP_JET)
+        ret, buffer = cv2.imencode('.jpg', depth_visual_color)
+        if ret:
+            depth_base64 = base64.b64encode(buffer).decode('utf-8')
+        else:
+            logger.warning("Failed to encode depth frame.")
+
+    imu_payload = None
+    if frame_data.imu_data:
+        imu = frame_data.imu_data
+        imu_payload = {
+            'gyroscope': {'x': imu.gyroscope[0], 'y': imu.gyroscope[1], 'z': imu.gyroscope[2]},
+            'accelerometer': {'x': imu.accelerometer[0], 'y': imu.accelerometer[1], 'z': imu.accelerometer[2]},
+            'temperature': imu.temperature,
+        }
+
+    client_data = {
+        'color_image': {
+            'data': color_base64,
+            'width': frame_data.color_frame.shape[1] if color_base64 else 0,
+            'height': frame_data.color_frame.shape[0] if color_base64 else 0,
+            'format': 'jpeg'
+        },
+        'depth_image': {
+            'data': depth_base64,
+            'width': frame_data.depth_frame.shape[1] if depth_base64 else 0,
+            'height': frame_data.depth_frame.shape[0] if depth_base64 else 0,
+            'format': 'jpeg'
+        },
+        'imu': imu_payload
+    }
+    return client_data
+
+async def stream_data_to_client(sid):
+    """클라이언트에게 지속적으로 데이터를 전송하는 백그라운드 작업"""
+    logger.info(f"Starting data stream for client {sid}")
+    while sid in streaming_tasks:
+        try:
+            latest_frame = rs_manager.get_latest_frame_data()
+            if latest_frame:
+                client_data = prepare_frame_data_for_client(latest_frame)
+                if client_data:
+                    await sio.emit('frame_data', client_data, to=sid)
+            else:
+                logger.debug(f"No new frame data for {sid}, waiting.")
+            
+            await asyncio.sleep(1.0 / 20.0)  # ~20 FPS
+        except asyncio.CancelledError:
+            logger.info(f"Streaming task for {sid} was cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Error in streaming loop for {sid}: {e}", exc_info=True)
+            await sio.emit('error', {'message': f"Server streaming error: {e}"}, to=sid)
+            break
+    logger.info(f"Data stream stopped for client {sid}")
+
+# --- Socket.IO Events ---
 @sio.event
 async def connect(sid, environ):
     logger.info(f"Client connected: {sid}")
-    logger.debug(f"Connection environment: {environ}")
-    await sio.emit('status', {'message': 'Connected to server'}, to=sid)
+    await sio.emit('status', {'message': 'Connected to RealSense Server.'}, to=sid)
 
 @sio.event
 async def disconnect(sid):
     logger.info(f"Client disconnected: {sid}")
+    if sid in streaming_tasks:
+        streaming_tasks[sid].cancel()
+        del streaming_tasks[sid]
+        
+        if not streaming_tasks: # Stop hardware if no clients are streaming
+            logger.info("No active clients. Stopping RealSense streaming.")
+            await rs_manager.stop_streaming()
 
 @sio.event
 async def start_streaming(sid, data):
-    logger.info(f"Streaming request received from: {sid}")
-    logger.debug(f"Streaming request data: {data}")
-    
-    # Example: Send 10 dummy frames with actual values
-    for i in range(10):
-        # Create dummy image with frame number and timestamp
-        img = np.zeros((480, 640, 3), dtype=np.uint8)
-        # Add a moving pattern to make it more visible
-        for y in range(480):
-            for x in range(640):
-                img[y,x] = [(x + i * 20) % 255, (y + i * 20) % 255, (x + y + i * 20) % 255]
-                
-        cv2.putText(img, f"Frame {i+1}", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3)
-        _, buffer = cv2.imencode('.jpg', img)
-        color_base64 = base64.b64encode(buffer).decode('utf-8')
+    logger.info(f"Received 'start_streaming' request from {sid}")
+    if sid in streaming_tasks:
+        logger.warning(f"Client {sid} already has a streaming task. Ignoring request.")
+        return
 
-        # Create dummy depth image
-        depth_img = np.zeros((480, 640), dtype=np.uint16)
-        # Add a distance pattern
-        for y in range(480):
-            for x in range(640):
-                depth_img[y,x] = ((x + y + i * 50) % 1000) + 500  # Values between 500-1500mm
-        
-        # Convert depth to visualization
-        depth_viz = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        _, depth_buffer = cv2.imencode('.jpg', depth_viz)
-        depth_base64 = base64.b64encode(depth_buffer).decode('utf-8')
+    if not rs_manager.is_running:
+        logger.info("RealSense manager is not running. Starting it now.")
+        await rs_manager.start_streaming()
 
-        # Generate some moving IMU data
-        time_factor = i * 0.1
-        frame_data = {
-            'color_image': {
-                'data': color_base64,
-                'width': 640,
-                'height': 480,
-                'format': 'jpeg'
-            },
-            'depth_image': {
-                'data': depth_base64,
-                'width': 640,
-                'height': 480,
-                'format': 'jpeg'
-            },
-            'imu': {
-                'gyroscope': {
-                    'x': math.sin(time_factor) * 10.0,
-                    'y': math.cos(time_factor) * 10.0,
-                    'z': math.sin(time_factor * 2) * 5.0
-                },
-                'accelerometer': {
-                    'x': math.sin(time_factor) * 9.81,
-                    'y': math.cos(time_factor) * 9.81,
-                    'z': 9.81
-                },
-                'temperature': 25.0 + math.sin(time_factor) * 2.0
-            }
-        }
-        
-        logger.debug(f"Sending frame {i+1} to {sid}")
-        await sio.emit('frame_data', frame_data, to=sid)
-        await asyncio.sleep(0.1)
-    
-    logger.info(f"Streaming completed for {sid}")
-    await sio.emit('status', {'message': 'Streaming completed'}, to=sid)
+    task = asyncio.create_task(stream_data_to_client(sid))
+    streaming_tasks[sid] = task
+    await sio.emit('status', {'message': 'Streaming started.'}, to=sid)
 
 @sio.event
-async def ping(sid, data):
-    logger.debug(f"Ping received from {sid}")
-    await sio.emit('pong', {'message': 'pong'}, to=sid)
+async def stop_streaming(sid, data):
+    logger.info(f"Received 'stop_streaming' request from {sid}")
+    if sid in streaming_tasks:
+        streaming_tasks[sid].cancel()
+        del streaming_tasks[sid]
+        await sio.emit('status', {'message': 'Streaming stopped.'}, to=sid)
+        
+        if not streaming_tasks: # Stop hardware if no clients are streaming
+            logger.info("No active streams. Stopping RealSense hardware.")
+            await rs_manager.stop_streaming()
+
+# --- Main Application Logic ---
+async def main():
+    logger.info("Initializing RealSense Manager...")
+    initialized = await rs_manager.initialize()
+    if not initialized:
+        logger.error("Failed to initialize RealSense Manager. Exiting.")
+        return
+
+    logger.info("Starting Socket.IO server on http://0.0.0.0:8080")
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    logger.info("Server is up and running. Waiting for connections.")
+
+    try:
+        # Keep the server running until interrupted
+        await asyncio.Event().wait()
+    finally:
+        logger.info("Server is shutting down.")
+        await rs_manager.cleanup()
+        await runner.cleanup()
 
 if __name__ == '__main__':
-    logger.info("Starting Socket.IO server on http://0.0.0.0:8080")
-    web.run_app(app, host='0.0.0.0', port=8080)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user (Ctrl+C).")
+    except Exception as e:
+        logger.critical(f"A critical error occurred: {e}", exc_info=True)
