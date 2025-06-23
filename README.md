@@ -1,280 +1,52 @@
-# RealSense D435i Unity Link - Python
+# RSUnityLink-python
 
-RealSense D435i 카메라에서 뎁스 카메라 영상과 IMU 데이터를 비동기 소켓통신으로 Unity에 전송하는 Python 애플리케이션입니다.
+RealSense D435i 카메라의 영상 및 센서 데이터를 Python 서버를 통해 Unity로 실시간 스트리밍하는 프로젝트입니다.
 
 ## 주요 기능
 
-- **RealSense D435i 지원**: 뎁스 카메라와 IMU 데이터 동시 처리
-- **비동기 처리**: asyncio를 사용한 고성능 비동기 처리
-- **싱글톤 패턴**: 메모리 효율적인 싱글톤 클래스 구조
-- **WebSocket 서버**: Unity와의 실시간 통신
-- **설정 관리**: 환경 변수를 통한 유연한 설정
-- **로깅 시스템**: 상세한 로그 기록 및 로테이션
+*   **실시간 스트리밍**: RealSense 카메라의 Color, Depth 데이터를 Unity로 전송합니다.
+*   **Socket.IO 통신**: 안정적인 웹소켓 통신을 위해 `python-socketio`를 사용합니다.
+*   **설정 파일**: `config.json`을 통해 스트림(Color, Depth, IMU) 활성화 여부, 해상도, FPS를 쉽게 변경할 수 있습니다.
 
-## 시스템 요구사항
+## 현재 아키텍처
 
-- **Python**: 3.10 이상
-- **OS**: Linux (Raspberry Pi 4 권장)
-- **하드웨어**: Intel RealSense D435i 카메라
-- **네트워크**: WebSocket 통신 지원
+*   **Python 서버 (`socketio_server.py`)**:
+    *   `realsense_manager.py`: RealSense 카메라 하드웨어를 제어하고 데이터 프레임을 가져옵니다.
+    *   `config.py`: `config.json` 파일에서 설정을 읽어 카메라와 서버 동작을 관리합니다.
+    *   Socket.IO 서버를 구동하여 Unity 클라이언트의 연결을 기다리고, 요청 시 데이터를 스트리밍합니다.
 
-## 설치 방법
+*   **Unity 클라이언트 (`unitySocketProject/`)**:
+    *   `WebSocketTest.cs`: Socket.IO 클라이언트를 사용하여 서버에 접속하고, `frame_data` 이벤트를 통해 수신한 데이터를 화면 UI에 렌더링합니다.
 
-### 1. 저장소 클론
-```bash
-git clone <repository-url>
-cd RSUnityLink-python
-```
+## 설치 및 실행 방법
 
-### 2. 의존성 설치
+### 1. Python 서버 설정
+
+**의존성 설치:**
+프로젝트 루트 디렉토리에서 아래 명령어를 실행하여 필요한 Python 라이브러리를 설치합니다.
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 환경 설정
+**서버 실행:**
+
 ```bash
-# 환경 변수 파일 복사
-cp env_example.txt .env
-
-# 필요에 따라 .env 파일 편집
-nano .env
+python3 socketio_server.py
 ```
 
-## 서버 실행 및 종료
+*   서버를 처음 실행하면, 기본 설정이 담긴 `config.json` 파일이 자동으로 생성됩니다.
+*   이후 `config.json` 파일을 수정하여 원하는 스트림 조합, 해상도, FPS를 설정할 수 있습니다. (서버 재시작 필요)
 
-### 방법 1: 직접 실행 (권장)
-```bash
-# 서버 실행
-python3 run_server.py
+### 2. Unity 클라이언트 설정
 
-# 종료: Ctrl+C
-```
+1.  Unity Hub에서 `unitySocketProject` 폴더를 프로젝트로 엽니다.
+2.  `Assets/Scenes/SampleScene` 씬을 엽니다.
+3.  `Canvas` 오브젝트 아래에 있는 `WebSocketManager` 게임 오브젝트를 선택합니다.
+4.  Inspector 창의 **WebSocket Test** 컴포넌트에서 `Server Url` 필드에 Python 서버가 실행 중인 장치(라즈베리파이 등)의 IP 주소를 입력합니다. (예: `http://192.168.0.10:8080`)
+5.  Unity 에디터에서 플레이 버튼을 눌러 실행합니다.
+6.  "Start Streaming" 버튼을 클릭하여 서버로부터 데이터 수신을 시작합니다.
 
-### 방법 2: 기본 실행
-```bash
-# 서버 실행
-python3 main.py
+## 보관된 파일
 
-# 종료: Ctrl+C (개선된 종료 처리)
-```
-
-### 방법 3: 별도 종료 스크립트
-```bash
-# 서버 실행
-python3 main.py &
-
-# 별도 터미널에서 종료
-python3 stop_server.py
-```
-
-### 방법 4: 자동 설치 스크립트
-```bash
-# 라즈베리파이에서 자동 설치 및 실행
-./install.sh
-```
-
-## 설정 옵션
-
-### RealSense 설정
-- `RS_WIDTH`: 컬러/뎁스 스트림 너비 (기본값: 640)
-- `RS_HEIGHT`: 컬러/뎁스 스트림 높이 (기본값: 480)
-- `RS_FPS`: 프레임 레이트 (기본값: 30)
-- `RS_DEPTH_SCALE`: 뎁스 스케일 (기본값: 0.001)
-- `RS_ENABLE_IMU`: IMU 활성화 (기본값: true)
-
-### 소켓 서버 설정
-- `SOCKET_HOST`: 서버 호스트 (기본값: 0.0.0.0)
-- `SOCKET_PORT`: 서버 포트 (기본값: 8080)
-- `MAX_CONNECTIONS`: 최대 연결 수 (기본값: 5)
-
-### 데이터 전송 설정
-- `ENABLE_DEPTH`: 뎁스 이미지 전송 (기본값: true)
-- `ENABLE_COLOR`: 컬러 이미지 전송 (기본값: true)
-- `ENABLE_IMU`: IMU 데이터 전송 (기본값: true)
-- `COMPRESSION_QUALITY`: 이미지 압축 품질 (기본값: 80)
-- `FRAME_SKIP`: 프레임 스킵 (기본값: 1)
-
-### 로깅 설정
-- `LOG_LEVEL`: 로그 레벨 (기본값: INFO)
-- `LOG_FILE`: 로그 파일 경로 (기본값: logs/rs_unity_link.log)
-- `LOG_MAX_SIZE`: 로그 파일 최대 크기 (기본값: 10MB)
-- `LOG_BACKUP_COUNT`: 로그 백업 파일 수 (기본값: 5)
-
-## 테스트 방법
-
-### 1. 테스트 클라이언트 사용
-```bash
-# 서버 실행 (터미널 1)
-python3 run_server.py
-
-# 테스트 클라이언트 실행 (터미널 2)
-python3 test_client.py
-```
-
-### 2. 웹 브라우저 테스트
-1. `websocket_test.html` 파일을 웹 브라우저에서 열기
-2. "연결" 버튼 클릭
-3. 서버 URL 입력: `ws://localhost:8080`
-4. 실시간 데이터 확인
-
-### 3. 외부 접속 테스트
-```bash
-# 연결 테스트
-./test_websocket.sh 라즈베리파이IP 8080
-```
-
-## 프로젝트 구조
-
-```
-RSUnityLink-python/
-├── main.py                 # 메인 애플리케이션 진입점
-├── run_server.py           # 안정적인 서버 실행 래퍼
-├── stop_server.py          # 서버 종료 스크립트
-├── config.py              # 설정 관리 싱글톤 클래스
-├── logger.py              # 로깅 관리 싱글톤 클래스
-├── realsense_manager.py   # RealSense D435i 관리 클래스
-├── data_transmitter.py    # WebSocket 서버 및 데이터 전송
-├── test_client.py         # 테스트용 WebSocket 클라이언트
-├── websocket_test.html    # 웹 브라우저 테스트 페이지
-├── test_websocket.sh      # WebSocket 연결 테스트 스크립트
-├── requirements.txt       # Python 의존성 패키지
-├── env_example.txt        # 환경 변수 설정 예제
-├── install.sh             # 자동 설치 스크립트
-└── README.md             # 프로젝트 문서
-```
-
-## 클래스 구조
-
-### Config (싱글톤)
-- 환경 변수 기반 설정 관리
-- RealSense, 소켓, 전송, 로깅 설정 제공
-
-### Logger (싱글톤)
-- 콘솔 및 파일 로깅
-- 로그 로테이션 지원
-- 다양한 로그 레벨 지원
-
-### RealSenseManager (싱글톤)
-- RealSense D435i 초기화 및 관리
-- 비동기 프레임 및 IMU 데이터 처리
-- 데이터 구조체 정의 (FrameData, IMUData)
-
-### DataTransmitter (싱글톤)
-- WebSocket 서버 관리
-- 클라이언트 연결 처리
-- 데이터 압축 및 전송
-
-## 데이터 형식
-
-### 프레임 데이터
-```json
-{
-  "type": "frame_data",
-  "timestamp": 1234567890.123,
-  "frame_count": 1234567890123,
-  "color_image": {
-    "data": "base64_encoded_jpeg",
-    "width": 640,
-    "height": 480,
-    "format": "jpeg"
-  },
-  "depth_image": {
-    "data": "base64_encoded_png",
-    "width": 640,
-    "height": 480,
-    "format": "png",
-    "depth_scale": 0.001
-  },
-  "imu": {
-    "timestamp": 1234567890.123,
-    "gyroscope": {
-      "x": 0.1,
-      "y": 0.2,
-      "z": 0.3
-    },
-    "accelerometer": {
-      "x": 9.8,
-      "y": 0.1,
-      "z": 0.2
-    },
-    "temperature": 25.0
-  }
-}
-```
-
-### 클라이언트 명령
-```json
-{
-  "command": "start_streaming"
-}
-```
-
-### 서버 응답
-```json
-{
-  "type": "success",
-  "message": "스트리밍 시작됨"
-}
-```
-
-## Unity 연동
-
-Unity에서는 WebSocket 클라이언트를 구현하여 이 서버에 연결하고 데이터를 수신할 수 있습니다.
-
-### Unity WebSocket 클라이언트 예제
-```csharp
-using WebSocketSharp;
-using Newtonsoft.Json;
-
-public class RealSenseClient : MonoBehaviour
-{
-    private WebSocket webSocket;
-    
-    void Start()
-    {
-        webSocket = new WebSocket("ws://raspberry-pi-ip:8080");
-        webSocket.OnMessage += OnMessage;
-        webSocket.Connect();
-    }
-    
-    void OnMessage(object sender, MessageEventArgs e)
-    {
-        var data = JsonConvert.DeserializeObject<FrameData>(e.Data);
-        // 데이터 처리
-    }
-}
-```
-
-## 문제 해결
-
-### 서버가 종료되지 않는 경우
-1. **Ctrl+C 두 번 누르기**: 첫 번째는 정상 종료, 두 번째는 강제 종료
-2. **종료 스크립트 사용**: `python3 stop_server.py`
-3. **프로세스 강제 종료**: `pkill -f main.py`
-
-### RealSense 장치를 찾을 수 없는 경우
-1. RealSense D435i가 올바르게 연결되었는지 확인
-2. USB 권한 확인: `sudo usermod -a -G video $USER`
-3. RealSense SDK 설치 확인
-
-### WebSocket 연결 실패
-1. 방화벽 설정 확인
-2. 포트 번호 확인
-3. 네트워크 연결 상태 확인
-
-### 성능 문제
-1. 프레임 스킵 설정 조정
-2. 압축 품질 조정
-3. 해상도 및 FPS 조정
-
-## 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 배포됩니다.
-
-## 기여
-
-버그 리포트, 기능 요청, 풀 리퀘스트를 환영합니다.
-
-## 연락처
-
-프로젝트 관련 문의사항이 있으시면 이슈를 생성해 주세요.
+이전 버전의 테스트 스크립트 및 레거시 파일들은 `_archive` 폴더에 보관되어 있습니다.
