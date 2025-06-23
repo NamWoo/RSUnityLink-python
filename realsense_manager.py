@@ -73,6 +73,17 @@ class RealSenseManager:
         try:
             logger.info("RealSense D435i 초기화 시작...")
             
+            # --- 설정 로드 ---
+            cfg = self.rs_config
+            enable_color = cfg.get('enable_color', True)
+            enable_depth = cfg.get('enable_depth', True)
+            enable_imu = cfg.get('enable_imu', True)
+            width = cfg.get('width', 424)
+            height = cfg.get('height', 240)
+            fps = cfg.get('fps', 15)
+            
+            logger.info(f"설정: Color={enable_color}, Depth={enable_depth}, IMU={enable_imu}, {width}x{height}@{fps}fps")
+
             # RealSense 컨텍스트 생성
             ctx = rs.context()
             devices = ctx.query_devices()
@@ -97,43 +108,31 @@ class RealSenseManager:
             serial_number = device.get_info(rs.camera_info.serial_number)
             self.config_rs.enable_device(serial_number)
             
-            # 스트림 설정 (순차적으로 추가)
+            # 스트림 설정 (설정에 따라 조건부로 활성화)
             try:
-                # 기본 해상도로 시작
-                width = 424
-                height = 240
-                fps = 15
+                if not enable_color and not enable_depth and not enable_imu:
+                    logger.error("모든 스트림이 비활성화되어 있습니다. 하나 이상을 활성화해야 합니다.")
+                    return False
                 
-                # 1단계: 컬러 스트림만 먼저 설정
-                self.config_rs.enable_stream(
-                    rs.stream.color,
-                    width, height,
-                    rs.format.bgr8,
-                    fps
-                )
+                if enable_color:
+                    self.config_rs.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+                    logger.info("컬러 스트림 설정 완료")
+
+                if enable_depth:
+                    self.config_rs.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
+                    logger.info("뎁스 스트림 설정 완료")
                 
-                # 2단계: 뎁스 스트림 추가
-                self.config_rs.enable_stream(
-                    rs.stream.depth,
-                    width, height,
-                    rs.format.z16,
-                    fps
-                )
-                logger.info("컬러 및 뎁스 스트림 설정 완료")
-                
-                # IMU 스트림 활성화
-                self.rs_config['enable_imu'] = True
-                if self.rs_config.get('enable_imu', False):
+                if enable_imu:
                     try:
                         self.config_rs.enable_stream(rs.stream.accel)
                         self.config_rs.enable_stream(rs.stream.gyro)
                         logger.info("IMU (Accel, Gyro) 스트림 설정 완료")
                     except Exception as e:
-                        logger.warning(f"IMU 스트림 설정 실패 (카메라가 지원하지 않을 수 있음): {e}")
-                        self.rs_config['enable_imu'] = False
-            
+                        logger.warning(f"IMU 스트림 설정 실패 (하드웨어 미지원 가능): {e}")
+                        cfg['enable_imu'] = False # 실패 시 설정도 비활성화
+
             except Exception as e:
-                logger.error(f"스트림 설정 실패: {str(e)}")
+                logger.error(f"스트림 설정 중 오류 발생: {str(e)}", exc_info=True)
                 return False
             
             # 파이프라인 시작
