@@ -187,44 +187,23 @@ class RealSenseManager:
         self._frame_task = asyncio.create_task(self._process_all_frames())
     
     async def stop_streaming(self):
-        """스트리밍 중지"""
+        """데이터 처리 태스크만 중지하고, 하드웨어 파이프라인은 활성 상태로 유지합니다."""
         if not self.is_running:
-            logger.warning("이미 스트리밍이 중지되어 있습니다.")
+            logger.warning("스트리밍 태스크가 이미 중지 상태입니다.")
             return
         
-        logger.info("RealSense 스트리밍 중지 시작")
+        logger.info("RealSense 스트리밍 태스크 중지...")
         self.is_running = False
         
-        # 태스크 취소
         if self._frame_task:
             self._frame_task.cancel()
             try:
                 await self._frame_task
             except asyncio.CancelledError:
-                pass
+                logger.info("프레임 처리 태스크가 정상적으로 취소되었습니다.")
             self._frame_task = None
         
-        if self._imu_task:
-            self._imu_task.cancel()
-            try:
-                await self._imu_task
-            except asyncio.CancelledError:
-                pass
-            self._imu_task = None
-        
-        # 파이프라인 중지
-        if self.pipeline:
-            try:
-                # 파이프라인이 실행 중인지 확인
-                if hasattr(self.pipeline, '_running') and self.pipeline._running:
-                    self.pipeline.stop()
-                    logger.info("RealSense 파이프라인 중지 완료")
-                else:
-                    logger.info("파이프라인이 이미 중지되어 있음")
-            except Exception as e:
-                logger.error(f"파이프라인 중지 중 오류: {str(e)}")
-        
-        logger.info("RealSense 스트리밍 중지 완료")
+        logger.info("스트리밍 태스크 중지 완료. (카메라 하드웨어는 계속 활성 상태)")
     
     async def _process_all_frames(self):
         """(통합) 프레임 및 IMU 데이터 처리 비동기 태스크"""
@@ -293,12 +272,22 @@ class RealSenseManager:
         return json.dumps(data)
     
     async def cleanup(self):
-        """리소스 정리"""
-        await self.stop_streaming()
+        """모든 리소스를 정리하고 파이프라인을 안전하게 중지합니다."""
+        logger.info("RealSense 리소스 정리 시작...")
         
+        # 1. 스트리밍 태스크가 실행 중이라면 먼저 중지합니다.
+        if self.is_running:
+            await self.stop_streaming()
+        
+        # 2. 그 다음, 하드웨어 파이프라인을 중지합니다.
         if self.pipeline:
-            self.pipeline.stop()
-            self.pipeline = None
+            try:
+                logger.info("RealSense 파이프라인을 중지합니다...")
+                self.pipeline.stop()
+                self.pipeline = None
+                logger.info("RealSense 파이프라인이 성공적으로 중지되었습니다.")
+            except Exception as e:
+                logger.error(f"파이프라인 중지 중 오류 발생: {e}", exc_info=True)
         
         self.is_connected = False
-        logger.info("RealSense 리소스 정리 완료") 
+        logger.info("RealSense 리소스 정리가 완료되었습니다.") 
