@@ -121,9 +121,17 @@ class RealSenseManager:
                 )
                 logger.info("컬러 및 뎁스 스트림 설정 완료")
                 
-                # IMU 스트림은 일단 비활성화
-                self.rs_config['enable_imu'] = False
-                
+                # IMU 스트림 활성화
+                self.rs_config['enable_imu'] = True
+                if self.rs_config.get('enable_imu', False):
+                    try:
+                        self.config_rs.enable_stream(rs.stream.accel)
+                        self.config_rs.enable_stream(rs.stream.gyro)
+                        logger.info("IMU (Accel, Gyro) 스트림 설정 완료")
+                    except Exception as e:
+                        logger.warning(f"IMU 스트림 설정 실패 (카메라가 지원하지 않을 수 있음): {e}")
+                        self.rs_config['enable_imu'] = False
+            
             except Exception as e:
                 logger.error(f"스트림 설정 실패: {str(e)}")
                 return False
@@ -179,11 +187,7 @@ class RealSenseManager:
         logger.info("RealSense 스트리밍 시작")
         
         # 프레임 처리 태스크 시작
-        self._frame_task = asyncio.create_task(self._process_frames())
-        
-        # IMU 처리 태스크 시작
-        if self.rs_config['enable_imu']:
-            self._imu_task = asyncio.create_task(self._process_imu())
+        self._frame_task = asyncio.create_task(self._process_all_frames())
     
     async def stop_streaming(self):
         """스트리밍 중지"""
@@ -225,82 +229,52 @@ class RealSenseManager:
         
         logger.info("RealSense 스트리밍 중지 완료")
     
-    async def _process_frames(self):
-        """프레임 처리 비동기 태스크"""
+    async def _process_all_frames(self):
+        """(통합) 프레임 및 IMU 데이터 처리 비동기 태스크"""
         try:
             while self.is_running:
-                # 프레임 대기
                 frames = await asyncio.get_event_loop().run_in_executor(
                     None, self.pipeline.wait_for_frames
                 )
-                
-                # 컬러 프레임
+
+                # --- 이미지 프레임 처리 ---
                 color_frame = frames.get_color_frame()
-                color_image = None
-                if color_frame:
-                    color_image = np.asanyarray(color_frame.get_data())
-                
-                # 뎁스 프레임
+                color_image = np.asanyarray(color_frame.get_data()) if color_frame else None
+
                 depth_frame = frames.get_depth_frame()
-                depth_image = None
-                if depth_frame:
-                    depth_image = np.asanyarray(depth_frame.get_data())
-                    # 뎁스 이미지를 미터 단위로 변환
-                    depth_image = depth_image * self.rs_config['depth_scale']
+                depth_image = np.asanyarray(depth_frame.get_data()) if depth_frame else None
                 
-                # 프레임 데이터 생성
+                # --- IMU 프레임 처리 ---
+                if self.rs_config.get('enable_imu', False):
+                    gyro_frame = frames.first_or_default(rs.stream.gyro)
+                    accel_frame = frames.first_or_default(rs.stream.accel)
+
+                    if gyro_frame and accel_frame:
+                        gyro_data = gyro_frame.as_motion_frame().get_motion_data()
+                        accel_data = accel_frame.as_motion_frame().get_motion_data()
+                        
+                        self.latest_imu_data = IMUData(
+                            timestamp=gyro_frame.get_timestamp(),
+                            gyroscope=(gyro_data.x, gyro_data.y, gyro_data.z),
+                            accelerometer=(accel_data.x, accel_data.y, accel_data.z),
+                            temperature=0.0  # D435i IMU는 온도 센서 미포함
+                        )
+
+                # --- 최종 데이터 객체 생성 ---
                 self.latest_frame_data = FrameData(
                     timestamp=datetime.now().timestamp(),
                     color_frame=color_image,
                     depth_frame=depth_image,
-                    imu_data=self.latest_imu_data
+                    imu_data=self.latest_imu_data # 가장 최근의 IMU 데이터를 첨부
                 )
                 
                 # 프레임 처리 간격 조절
-                await asyncio.sleep(1.0 / self.rs_config.get('fps', 20))
+                await asyncio.sleep(1.0 / self.rs_config.get('fps', 15))
                 
         except asyncio.CancelledError:
             logger.info("프레임 처리 태스크 취소됨")
         except Exception as e:
             logger.error(f"프레임 처리 중 오류: {str(e)}", exc_info=True)
-    
-    async def _process_imu(self):
-        """IMU 데이터 처리 비동기 태스크"""
-        try:
-            while self.is_running:
-                # IMU 프레임 대기
-                frames = await asyncio.get_event_loop().run_in_executor(
-                    None, self.pipeline.wait_for_frames
-                )
-                
-                # 자이로스코프 데이터
-                gyro_frame = frames.get_gyro_frame()
-                gyro_data = None
-                if gyro_frame:
-                    gyro_data = gyro_frame.get_motion_data()
-                
-                # 가속도계 데이터
-                accel_frame = frames.get_accel_frame()
-                accel_data = None
-                if accel_frame:
-                    accel_data = accel_frame.get_motion_data()
-                
-                # IMU 데이터 생성
-                if gyro_data and accel_data:
-                    self.latest_imu_data = IMUData(
-                        timestamp=datetime.now().timestamp(),
-                        gyroscope=(gyro_data.x, gyro_data.y, gyro_data.z),
-                        accelerometer=(accel_data.x, accel_data.y, accel_data.z),
-                        temperature=0.0  # D435i는 온도 센서가 없음
-                    )
-                
-                # IMU 처리 간격 조절
-                await asyncio.sleep(0.01)  # 100Hz
-                
-        except asyncio.CancelledError:
-            logger.info("IMU 처리 태스크 취소됨")
-        except Exception as e:
-            logger.error(f"IMU 처리 중 오류: {str(e)}", exc_info=True)
     
     def get_latest_frame_data(self) -> Optional[FrameData]:
         """최신 프레임 데이터 반환"""
