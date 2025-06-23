@@ -77,7 +77,9 @@ class RealSenseManager:
             cfg = self.rs_config
             enable_color = cfg.get('enable_color', True)
             enable_depth = cfg.get('enable_depth', True)
-            enable_imu = cfg.get('enable_imu', True)
+            # IMU 기능은 불안정하므로, 문제가 해결될 때까지 강제로 비활성화합니다.
+            enable_imu = False
+            
             width = cfg.get('width', 424)
             height = cfg.get('height', 240)
             fps = cfg.get('fps', 15)
@@ -122,24 +124,19 @@ class RealSenseManager:
                     self.config_rs.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
                     logger.info("뎁스 스트림 설정 완료")
                 
+                # IMU 스트림은 강제로 비활성화됨
                 if enable_imu:
-                    try:
-                        self.config_rs.enable_stream(rs.stream.accel)
-                        self.config_rs.enable_stream(rs.stream.gyro)
-                        logger.info("IMU (Accel, Gyro) 스트림 설정 완료")
-                    except Exception as e:
-                        logger.warning(f"IMU 스트림 설정 실패 (하드웨어 미지원 가능): {e}")
-                        cfg['enable_imu'] = False # 실패 시 설정도 비활성화
+                    logger.warning("설정 파일에서 IMU가 활성화되어 있지만, 안정성을 위해 강제로 비활성화되었습니다.")
+                cfg['enable_imu'] = False
 
             except Exception as e:
                 logger.error(f"스트림 설정 중 오류 발생: {str(e)}", exc_info=True)
                 return False
             
-            # 파이프라인 시작 (가장 안정적인 방법으로 변경)
-            # 라이브러리가 하드웨어에 가장 적합한 설정을 자동으로 찾도록 rs.config() 객체를 전달하지 않음
+            # 파이프라인 시작 (안정적인 방식으로 복원)
             try:
-                profile = self.pipeline.start()
-                logger.info("파이프라인 시작 성공 (자동 설정)")
+                profile = self.pipeline.start(self.config_rs)
+                logger.info("파이프라인 시작 성공")
             except Exception as e:
                 logger.error(f"파이프라인 시작 실패: {str(e)}", exc_info=True)
                 return False
@@ -244,28 +241,16 @@ class RealSenseManager:
                 depth_frame = frames.get_depth_frame()
                 depth_image = np.asanyarray(depth_frame.get_data()) if depth_frame else None
                 
-                # --- IMU 프레임 처리 ---
-                if self.rs_config.get('enable_imu', False):
-                    gyro_frame = frames.first_or_default(rs.stream.gyro)
-                    accel_frame = frames.first_or_default(rs.stream.accel)
-
-                    if gyro_frame and accel_frame:
-                        gyro_data = gyro_frame.as_motion_frame().get_motion_data()
-                        accel_data = accel_frame.as_motion_frame().get_motion_data()
-                        
-                        self.latest_imu_data = IMUData(
-                            timestamp=gyro_frame.get_timestamp(),
-                            gyroscope=(gyro_data.x, gyro_data.y, gyro_data.z),
-                            accelerometer=(accel_data.x, accel_data.y, accel_data.z),
-                            temperature=0.0  # D435i IMU는 온도 센서 미포함
-                        )
+                # --- IMU 프레임 처리 (비활성화) ---
+                # IMU 데이터는 항상 None으로 설정됩니다.
+                self.latest_imu_data = None
 
                 # --- 최종 데이터 객체 생성 ---
                 self.latest_frame_data = FrameData(
                     timestamp=datetime.now().timestamp(),
                     color_frame=color_image,
                     depth_frame=depth_image,
-                    imu_data=self.latest_imu_data # 가장 최근의 IMU 데이터를 첨부
+                    imu_data=self.latest_imu_data
                 )
                 
                 # 프레임 처리 간격 조절
