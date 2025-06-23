@@ -11,8 +11,10 @@ from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import json
-from logger import Logger
+import logging
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class IMUData:
@@ -45,7 +47,6 @@ class RealSenseManager:
         if self._initialized:
             return
         
-        self.logger = Logger()
         self.config = Config()
         self.rs_config = self.config.get_realsense_config()
         
@@ -70,23 +71,23 @@ class RealSenseManager:
     async def initialize(self) -> bool:
         """RealSense 초기화"""
         try:
-            self.logger.info("RealSense D435i 초기화 시작...")
+            logger.info("RealSense D435i 초기화 시작...")
             
             # RealSense 컨텍스트 생성
             ctx = rs.context()
             devices = ctx.query_devices()
             
             if len(devices) == 0:
-                self.logger.error("RealSense 장치를 찾을 수 없습니다.")
+                logger.error("RealSense 장치를 찾을 수 없습니다.")
                 return False
             
-            self.logger.info(f"발견된 RealSense 장치: {len(devices)}개")
+            logger.info(f"발견된 RealSense 장치: {len(devices)}개")
             
             # 장치 정보 출력
             device = devices[0]
-            self.logger.info(f"장치 이름: {device.get_info(rs.camera_info.name)}")
-            self.logger.info(f"시리얼 번호: {device.get_info(rs.camera_info.serial_number)}")
-            self.logger.info(f"펌웨어 버전: {device.get_info(rs.camera_info.firmware_version)}")
+            logger.info(f"장치 이름: {device.get_info(rs.camera_info.name)}")
+            logger.info(f"시리얼 번호: {device.get_info(rs.camera_info.serial_number)}")
+            logger.info(f"펌웨어 버전: {device.get_info(rs.camera_info.firmware_version)}")
             
             # 파이프라인 생성
             self.pipeline = rs.pipeline()
@@ -110,31 +111,29 @@ class RealSenseManager:
                     rs.format.bgr8,
                     fps
                 )
-                self.logger.info("컬러 스트림 설정 완료")
                 
-                # 2단계: 뎁스 스트림 추가 (잠시 대기 후)
-                await asyncio.sleep(0.1)  # 잠시 대기
+                # 2단계: 뎁스 스트림 추가
                 self.config_rs.enable_stream(
                     rs.stream.depth,
                     width, height,
                     rs.format.z16,
                     fps
                 )
-                self.logger.info("뎁스 스트림 설정 완료")
+                logger.info("컬러 및 뎁스 스트림 설정 완료")
                 
                 # IMU 스트림은 일단 비활성화
                 self.rs_config['enable_imu'] = False
                 
             except Exception as e:
-                self.logger.error(f"스트림 설정 실패: {str(e)}")
+                logger.error(f"스트림 설정 실패: {str(e)}")
                 return False
             
             # 파이프라인 시작
             try:
                 profile = self.pipeline.start(self.config_rs)
-                self.logger.info("파이프라인 시작 성공")
+                logger.info("파이프라인 시작 성공")
             except Exception as e:
-                self.logger.error(f"파이프라인 시작 실패: {str(e)}")
+                logger.error(f"파이프라인 시작 실패: {str(e)}", exc_info=True)
                 return False
             
             # 스트림 프로파일 정보 가져오기 (선택사항)
@@ -145,39 +144,39 @@ class RealSenseManager:
                 color_intrinsics = color_profile.as_video_stream_profile().get_intrinsics()
                 depth_intrinsics = depth_profile.as_video_stream_profile().get_intrinsics()
                 
-                self.logger.info(f"컬러 스트림 해상도: {color_intrinsics.width}x{color_intrinsics.height}")
-                self.logger.info(f"뎁스 스트림 해상도: {depth_intrinsics.width}x{depth_intrinsics.height}")
+                logger.info(f"컬러 스트림 해상도: {color_intrinsics.width}x{color_intrinsics.height}")
+                logger.info(f"뎁스 스트림 해상도: {depth_intrinsics.width}x{depth_intrinsics.height}")
                 
                 # 해상도가 다르면 경고
                 if color_intrinsics.width != depth_intrinsics.width or color_intrinsics.height != depth_intrinsics.height:
-                    self.logger.warning("컬러와 뎁스 해상도가 다릅니다!")
-                    self.logger.warning(f"컬러: {color_intrinsics.width}x{color_intrinsics.height}")
-                    self.logger.warning(f"뎁스: {depth_intrinsics.width}x{depth_intrinsics.height}")
+                    logger.warning("컬러와 뎁스 해상도가 다릅니다!")
+                    logger.warning(f"컬러: {color_intrinsics.width}x{color_intrinsics.height}")
+                    logger.warning(f"뎁스: {depth_intrinsics.width}x{depth_intrinsics.height}")
                 
             except Exception as e:
-                self.logger.warning(f"스트림 프로파일 정보 가져오기 실패: {str(e)}")
+                logger.warning(f"스트림 프로파일 정보 가져오기 실패: {str(e)}")
                 # 프로파일 정보가 없어도 계속 진행
             
             self.is_connected = True
-            self.logger.info("RealSense D435i 초기화 완료")
+            logger.info("RealSense D435i 초기화 완료")
             return True
             
         except Exception as e:
-            self.logger.error(f"RealSense 초기화 실패: {str(e)}")
+            logger.error(f"RealSense 초기화 실패: {str(e)}", exc_info=True)
             return False
     
     async def start_streaming(self):
         """스트리밍 시작"""
         if not self.is_connected:
-            self.logger.error("RealSense가 연결되지 않았습니다.")
+            logger.error("RealSense가 연결되지 않았습니다.")
             return
         
         if self.is_running:
-            self.logger.warning("이미 스트리밍이 실행 중입니다.")
+            logger.warning("이미 스트리밍이 실행 중입니다.")
             return
         
         self.is_running = True
-        self.logger.info("RealSense 스트리밍 시작")
+        logger.info("RealSense 스트리밍 시작")
         
         # 프레임 처리 태스크 시작
         self._frame_task = asyncio.create_task(self._process_frames())
@@ -189,10 +188,10 @@ class RealSenseManager:
     async def stop_streaming(self):
         """스트리밍 중지"""
         if not self.is_running:
-            self.logger.warning("이미 스트리밍이 중지되어 있습니다.")
+            logger.warning("이미 스트리밍이 중지되어 있습니다.")
             return
         
-        self.logger.info("RealSense 스트리밍 중지 시작")
+        logger.info("RealSense 스트리밍 중지 시작")
         self.is_running = False
         
         # 태스크 취소
@@ -218,13 +217,13 @@ class RealSenseManager:
                 # 파이프라인이 실행 중인지 확인
                 if hasattr(self.pipeline, '_running') and self.pipeline._running:
                     self.pipeline.stop()
-                    self.logger.info("RealSense 파이프라인 중지 완료")
+                    logger.info("RealSense 파이프라인 중지 완료")
                 else:
-                    self.logger.info("파이프라인이 이미 중지되어 있음")
+                    logger.info("파이프라인이 이미 중지되어 있음")
             except Exception as e:
-                self.logger.error(f"파이프라인 중지 중 오류: {str(e)}")
+                logger.error(f"파이프라인 중지 중 오류: {str(e)}")
         
-        self.logger.info("RealSense 스트리밍 중지 완료")
+        logger.info("RealSense 스트리밍 중지 완료")
     
     async def _process_frames(self):
         """프레임 처리 비동기 태스크"""
@@ -261,9 +260,9 @@ class RealSenseManager:
                 await asyncio.sleep(1.0 / self.rs_config.get('fps', 20))
                 
         except asyncio.CancelledError:
-            self.logger.info("프레임 처리 태스크 취소됨")
+            logger.info("프레임 처리 태스크 취소됨")
         except Exception as e:
-            self.logger.error(f"프레임 처리 중 오류: {str(e)}")
+            logger.error(f"프레임 처리 중 오류: {str(e)}", exc_info=True)
     
     async def _process_imu(self):
         """IMU 데이터 처리 비동기 태스크"""
@@ -299,9 +298,9 @@ class RealSenseManager:
                 await asyncio.sleep(0.01)  # 100Hz
                 
         except asyncio.CancelledError:
-            self.logger.info("IMU 처리 태스크 취소됨")
+            logger.info("IMU 처리 태스크 취소됨")
         except Exception as e:
-            self.logger.error(f"IMU 처리 중 오류: {str(e)}")
+            logger.error(f"IMU 처리 중 오류: {str(e)}", exc_info=True)
     
     def get_latest_frame_data(self) -> Optional[FrameData]:
         """최신 프레임 데이터 반환"""
@@ -343,4 +342,4 @@ class RealSenseManager:
             self.pipeline = None
         
         self.is_connected = False
-        self.logger.info("RealSense 리소스 정리 완료") 
+        logger.info("RealSense 리소스 정리 완료") 
