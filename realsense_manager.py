@@ -135,10 +135,11 @@ class RealSenseManager:
                 logger.error(f"스트림 설정 중 오류 발생: {str(e)}", exc_info=True)
                 return False
             
-            # 파이프라인 시작
+            # 파이프라인 시작 (가장 안정적인 방법으로 변경)
+            # 라이브러리가 하드웨어에 가장 적합한 설정을 자동으로 찾도록 rs.config() 객체를 전달하지 않음
             try:
-                profile = self.pipeline.start(self.config_rs)
-                logger.info("파이프라인 시작 성공")
+                profile = self.pipeline.start()
+                logger.info("파이프라인 시작 성공 (자동 설정)")
             except Exception as e:
                 logger.error(f"파이프라인 시작 실패: {str(e)}", exc_info=True)
                 return False
