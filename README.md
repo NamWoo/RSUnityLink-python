@@ -2,11 +2,21 @@
 
 RealSense D435i 카메라의 영상 및 센서 데이터를 Python 서버를 통해 Unity로 실시간 스트리밍하는 프로젝트입니다.
 
+## 작동 영상
+
+[![Project Demo](https://img.youtube.com/vi/MU2hgVjgmp0/0.jpg)](https://youtu.be/MU2hgVjgmp0)
+
+*위 이미지를 클릭하면 작동 영상을 볼 수 있습니다.*
+
 ## 주요 기능
 
 *   **실시간 스트리밍**: RealSense 카메라의 Color, Depth 데이터를 Unity로 전송합니다.
 *   **Socket.IO 통신**: 안정적인 웹소켓 통신을 위해 `python-socketio`를 사용합니다.
 *   **설정 파일**: `config.json`을 통해 스트림(Color, Depth, IMU) 활성화 여부, 해상도, FPS를 쉽게 변경할 수 있습니다.
+
+## 아키텍처 다이어그램
+
+![Architecture Diagram](graphtd.png)
 
 ## 현재 아키텍처
 
