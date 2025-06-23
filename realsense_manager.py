@@ -100,9 +100,9 @@ class RealSenseManager:
             # 스트림 설정 (순차적으로 추가)
             try:
                 # 기본 해상도로 시작
-                width = 640
-                height = 480
-                fps = 20
+                width = 424
+                height = 240
+                fps = 15
                 
                 # 1단계: 컬러 스트림만 먼저 설정
                 self.config_rs.enable_stream(
